@@ -326,10 +326,13 @@ theta.md <-
 }
 
 theta.ml <-
-    function(y, mu, n = sum(weights), weights, limit = 10,
+    function(y, mu, n = sum(weights), weights, limit = 20,
              eps = .Machine$double.eps^0.25,
              trace = FALSE)
 {
+    loglik <- function(n, th, mu, y, w)
+        sum(w*(lgamma(th + y) - lgamma(th) - lgamma(y + 1) +
+               th*log(th/(mu + th)) + y*log(mu/(mu + th))))
     score <- function(n, th, mu, y, w)
         sum(w*(digamma(th + y) - digamma(th) + log(th) +
                1 - log(th + mu) - (y + th)/(mu + th)))
@@ -342,25 +345,22 @@ theta.ml <-
     }
     if(missing(weights)) weights <- rep(1, length(y))
     t0 <- n/sum(weights*(y/mu - 1)^2)
-    it <- 0
-    del <- 1
-    if(trace) message(sprintf("theta.ml: iter %d 'theta = %f'",
-                              it, signif(t0)), domain = NA)
-    while((it <- it + 1) < limit && abs(del) > eps) {
-        t0 <- abs(t0)
-        del <- score(n, t0, mu, y, weights)/(i <- info(n, t0, mu, y, weights))
-        t0 <- t0 + del
-        if(trace) message("theta.ml: iter", it," theta =", signif(t0))
-    }
+
+    f <- function(th) loglik(n, th, mu, y, weights)
+    g <- function(th) score (n, th, mu, y, weights)
+    res <- optim(par=t0, fn=f, gr=g, lower=.Machine$double.eps, method="L-BFGS-B", control=list(fnscale=-1, maxit=limit))
+    t0 <- res$par
+
     if(t0 < 0) {
         t0 <- 0
         warning("estimate truncated at zero")
         attr(t0, "warn") <- gettext("estimate truncated at zero")
     }
-    if(it == limit) {
+    if(res$convergence == 1) {
         warning("iteration limit reached")
         attr(t0, "warn") <- gettext("iteration limit reached")
     }
+    i <- info(n, t0, mu, y, weights)
     attr(t0, "SE") <- sqrt(1/i)
     t0
 }
